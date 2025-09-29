@@ -1,0 +1,67 @@
+#!/bin/sh
+#
+# Copyright (c) 2025 apebl <a@pebl.cc>
+#
+# Licensed under the MIT (Expat) License.
+# See https://spdx.org/licenses/MIT.html for details.
+#
+
+set -e
+
+usage() {
+  echo "Usage:"
+  echo "  gpg-forward [OPTIONS] DEST"
+  echo "Options:"
+  echo "  -t DURATION  Close session after DURATION"
+  echo "  -h           Print this help message"
+  echo ""
+  echo "DURATION is a floating point number with an optional suffix:"
+  echo "s for seconds (default), m for minutes, h for hours, or d for days."
+}
+
+DURATION=""
+
+parse_opts() {
+  while getopts ":t:h" arg; do
+    case "$arg" in
+      t)
+        DURATION="$OPTARG"
+        ;;
+      h)
+        usage
+        exit
+        ;;
+      *)
+        usage
+        exit 1
+        ;;
+    esac
+  done
+}
+
+parse_opts "$@"
+shift $((OPTIND-1))
+
+[ "$#" -gt 0 ] || ( usage; exit 1 )
+
+REMOTE="$1"
+shift
+
+parse_opts "$@"
+shift $((OPTIND-1))
+
+
+REMOTE_SOCKET="$(ssh "$REMOTE" gpgconf --list-dirs agent-socket)"
+LOCAL_EXTRA_SOCKET="$(gpgconf --list-dirs agent-extra-socket)"
+CMD="echo Connected; while :; do sleep 999999; done;"
+
+if [ -z "$DURATION" ]; then 
+  ssh -R "$REMOTE_SOCKET:$LOCAL_EXTRA_SOCKET" -o ServerAliveInterval=15 "$REMOTE" "$CMD"
+else
+  timeout --foreground "$DURATION" ssh -R "$REMOTE_SOCKET:$LOCAL_EXTRA_SOCKET" -o ServerAliveInterval=15 "$REMOTE" "$CMD" && ret="$?" || ret="$?"
+  if [ "$ret" -eq 124 ]; then # timeout
+    exit 0
+  elif [ "$ret" -ne 0 ]; then
+    exit 1
+  fi
+fi
